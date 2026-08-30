@@ -1,0 +1,87 @@
+name: Build and Publish Docker Image
+
+on:
+  schedule:
+    - cron: '0 3 */14 * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  IMAGE_NAME: ghcr.io/xykbear/flclash-docker
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream version
+        id: version
+        run: |
+          CURRENT="$(cat FLCLASH_VERSION)"
+          echo "current=$CURRENT"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="$CURRENT"
+            BUILD="true"
+            echo "Push event: building pinned version $CURRENT"
+          else
+            LATEST="$(curl -fsSL https://api.github.com/repos/chen08209/FlClash/releases/latest | jq -r .tag_name)"
+            echo "latest=$LATEST"
+            if [ "$LATEST" = "$CURRENT" ]; then
+              echo "No upstream change"
+              BUILD="false"
+            else
+              echo "New upstream release: $LATEST"
+              VERSION="$LATEST"
+              echo "$LATEST" > FLCLASH_VERSION
+              BUILD="true"
+            fi
+          fi
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION:-$CURRENT}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.version.outputs.build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.version.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        if: steps.version.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: FLCLASH_VERSION=${{ steps.version.outputs.version }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=FlClash
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Commit version bump
+        if: steps.version.outputs.build == 'true' && github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add FLCLASH_VERSION
+          git commit -m "chore: bump FlClash to ${{ steps.version.outputs.version }}"
+          git push

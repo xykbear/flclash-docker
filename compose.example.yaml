@@ -1,0 +1,16 @@
+services:
+  flclash:
+    image: ghcr.io/xykbear/flclash-docker:latest
+    container_name: flclash
+    network_mode: bridge
+    volumes:
+      - ./flclash-data:/config/xdg/data/com.follow.clash
+    ports:
+      - "5800:5800"       # noVNC GUI (import subscription / pick node)
+      - "7890:7890"       # HTTP / mixed proxy (point LAN devices here)
+      - "7891:7891"       # SOCKS proxy
+      - "9091:9091"       # Clash controller (dashboard)
+      - "1053:1053/udp"   # DNS
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
