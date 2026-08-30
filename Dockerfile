@@ -8,8 +8,9 @@ ENV APP_NAME=flclash
 ENV APP_RUN=/startapp.sh
 
 # INSTALL DEPENDENCIES
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# add-pkg pre-creates /config/log so the baseimage's /var/log symlink resolves
+# (avoids systemd postinst "cannot create directory '/var/log': File exists")
+RUN add-pkg \
       socat \
       locales \
       dbus \
@@ -21,13 +22,12 @@ RUN apt-get update && \
       ca-certificates \
       fonts-noto-cjk \
       fonts-wqy-zenhei \
-      fonts-wqy-microhei && \
-    locale-gen zh_CN.UTF-8 en_US.UTF-8 && \
-    update-locale LANG=zh_CN.UTF-8 && \
-    rm -rf /var/lib/apt/lists/*
+      fonts-wqy-microhei
 
 ENV LANG=zh_CN.UTF-8
 ENV LC_ALL=zh_CN.UTF-8
+
+RUN locale-gen zh_CN.UTF-8 en_US.UTF-8 && update-locale LANG=zh_CN.UTF-8
 
 # Download the FlClash package for the target architecture and verify its checksum
 RUN set -ex; \
@@ -39,10 +39,8 @@ RUN set -ex; \
     curl -fsSL -o /tmp/SHA256SUMS \
       "https://github.com/chen08209/FlClash/releases/download/${FLCLASH_VERSION}/SHA256SUMS"; \
     (cd /tmp && grep "${DEB_NAME}" SHA256SUMS | sha256sum -c -); \
-    apt-get update && \
-    apt-get install -y "/tmp/${DEB_NAME}" || apt-get install -fy; \
-    rm -f "/tmp/${DEB_NAME}" /tmp/SHA256SUMS; \
-    rm -rf /var/lib/apt/lists/*
+    add-pkg "/tmp/${DEB_NAME}"; \
+    rm -f "/tmp/${DEB_NAME}" /tmp/SHA256SUMS
 
 # Create start-up script: forward Clash controller (127.0.0.1:9090) to 9091
 RUN echo '#!/bin/sh\n\
